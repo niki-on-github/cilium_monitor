@@ -7,21 +7,13 @@ use crate::api::observer::GetFlowsResponse;
 
 const BOX_WIDTH: usize = 80;
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub enum Verbosity {
-    Minimal,
-    Normal,
-    Verbose,
-}
-
 pub struct FlowFormatter {
-    verbosity: Verbosity,
     colored: bool,
 }
 
 impl FlowFormatter {
-    pub fn new(verbosity: Verbosity, colored: bool) -> Self {
-        Self { verbosity, colored }
+    pub fn new(colored: bool) -> Self {
+        Self { colored }
     }
 
     fn strip_ansi_codes(text: &str) -> String {
@@ -223,13 +215,7 @@ impl FlowFormatter {
         datetime.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 
-    pub fn format_endpoint(
-        &self,
-        ep: &Endpoint,
-        ip: Option<&Ip>,
-        service: Option<&Service>,
-        is_source: bool,
-    ) -> Vec<String> {
+    pub fn format_endpoint(&self, ep: &Endpoint, service: Option<&Service>) -> Vec<String> {
         let mut lines = Vec::new();
         let max_content_width = BOX_WIDTH - 10;
 
@@ -237,7 +223,7 @@ impl FlowFormatter {
         let pod_display = if ep.pod_name.is_empty() {
             "Unknown".to_string()
         } else {
-            if self.verbosity >= Verbosity::Normal && !ep.namespace.is_empty() {
+            if !ep.namespace.is_empty() {
                 format!("{}/{}", ep.namespace, ep.pod_name)
             } else {
                 ep.pod_name.clone()
@@ -249,22 +235,11 @@ impl FlowFormatter {
             self.color_text(&truncated_pod, Color::Cyan)
         ));
 
-        if self.verbosity >= Verbosity::Normal {
-            if let Some(svc) = service {
-                if !svc.name.is_empty() {
-                    let svc_name = Self::truncate_text(&svc.name, max_content_width);
-                    lines.push(format!("Service: {}", svc_name));
-                }
+        if let Some(svc) = service {
+            if !svc.name.is_empty() {
+                let svc_name = Self::truncate_text(&svc.name, max_content_width);
+                lines.push(format!("Service: {}", svc_name));
             }
-        }
-
-        if let Some(ip_info) = ip {
-            let ip_str = if is_source {
-                &ip_info.source
-            } else {
-                &ip_info.destination
-            };
-            lines.push(format!("IP: {}", self.color_text(ip_str, Color::Magenta)));
         }
 
         lines
@@ -283,28 +258,26 @@ impl FlowFormatter {
                         self.color_text(&tcp.destination_port.to_string(), Color::Yellow)
                     ));
 
-                    if self.verbosity >= Verbosity::Normal {
-                        let mut flags = Vec::new();
-                        if let Some(flags_info) = &tcp.flags {
-                            if flags_info.syn {
-                                flags.push("SYN");
-                            }
-                            if flags_info.ack {
-                                flags.push("ACK");
-                            }
-                            if flags_info.fin {
-                                flags.push("FIN");
-                            }
-                            if flags_info.rst {
-                                flags.push("RST");
-                            }
-                            if flags_info.psh {
-                                flags.push("PSH");
-                            }
+                    let mut flags = Vec::new();
+                    if let Some(flags_info) = &tcp.flags {
+                        if flags_info.syn {
+                            flags.push("SYN");
                         }
-                        if !flags.is_empty() {
-                            lines.push(format!("Flags: {}", flags.join(", ")));
+                        if flags_info.ack {
+                            flags.push("ACK");
                         }
+                        if flags_info.fin {
+                            flags.push("FIN");
+                        }
+                        if flags_info.rst {
+                            flags.push("RST");
+                        }
+                        if flags_info.psh {
+                            flags.push("PSH");
+                        }
+                    }
+                    if !flags.is_empty() {
+                        lines.push(format!("Flags: {}", flags.join(", ")));
                     }
                 }
                 crate::api::flow::layer4::Protocol::Udp(udp) => {
@@ -341,7 +314,7 @@ impl FlowFormatter {
             status
         ));
 
-        if self.verbosity == Verbosity::Verbose && !http.headers.is_empty() {
+        if !http.headers.is_empty() {
             lines.push("Headers:".to_string());
             for header in &http.headers {
                 if !header.key.is_empty() && !header.value.is_empty() {
@@ -372,19 +345,17 @@ impl FlowFormatter {
             }
         }
 
-        if self.verbosity >= Verbosity::Normal && dns.ttl > 0 {
+        if dns.ttl > 0 {
             lines.push(format!("TTL: {}s", dns.ttl));
         }
 
-        if self.verbosity == Verbosity::Verbose {
-            if dns.rcode > 0 {
-                lines.push(format!("RCODE: {}", dns.rcode));
-            }
-            if !dns.qtypes.is_empty() {
-                let qtypes = dns.qtypes.join(", ");
-                let truncated_qtypes = Self::truncate_text(&qtypes, max_content_width);
-                lines.push(format!("QTypes: {}", truncated_qtypes));
-            }
+        if dns.rcode > 0 {
+            lines.push(format!("RCODE: {}", dns.rcode));
+        }
+        if !dns.qtypes.is_empty() {
+            let qtypes = dns.qtypes.join(", ");
+            let truncated_qtypes = Self::truncate_text(&qtypes, max_content_width);
+            lines.push(format!("QTypes: {}", truncated_qtypes));
         }
 
         lines
@@ -405,7 +376,7 @@ impl FlowFormatter {
             }
         }
 
-        if l7.latency_ns > 0 && self.verbosity >= Verbosity::Normal {
+        if l7.latency_ns > 0 {
             let latency_ms = l7.latency_ns / 1_000_000;
             lines.push(format!("Latency: {}ms", latency_ms));
         }
@@ -425,28 +396,21 @@ impl FlowFormatter {
                 content_lines.push(format!("Time: {}", self.format_timestamp(time)));
             }
 
-            // 2. Node and Direction (Normal+ only)
-            if self.verbosity >= Verbosity::Normal {
-                if !flow.node_name.is_empty() {
-                    content_lines.push(format!("Node: {}", flow.node_name));
-                }
-                let direction = match flow.traffic_direction {
-                    1 => "Ingress",
-                    2 => "Egress",
-                    _ => "Unknown",
-                };
-                content_lines.push(format!("Direction: {}", direction));
+            // 2. Node and Direction (always shown at verbose)
+            if !flow.node_name.is_empty() {
+                content_lines.push(format!("Node: {}", flow.node_name));
             }
+            let direction = match flow.traffic_direction {
+                1 => "Ingress",
+                2 => "Egress",
+                _ => "Unknown",
+            };
+            content_lines.push(format!("Direction: {}", direction));
 
             // 3. SOURCE section
             if let Some(source) = &flow.source {
                 content_lines.push(String::new());
-                let src_lines = self.format_endpoint(
-                    source,
-                    flow.ip.as_ref(),
-                    flow.source_service.as_ref(),
-                    true,
-                );
+                let src_lines = self.format_endpoint(source, flow.source_service.as_ref());
                 let src_section = self.draw_section("SOURCE", src_lines);
                 content_lines.extend(src_section);
             }
@@ -454,18 +418,13 @@ impl FlowFormatter {
             // 4. DESTINATION section
             if let Some(dest) = &flow.destination {
                 content_lines.push(String::new());
-                let dst_lines = self.format_endpoint(
-                    dest,
-                    flow.ip.as_ref(),
-                    flow.destination_service.as_ref(),
-                    false,
-                );
+                let dst_lines = self.format_endpoint(dest, flow.destination_service.as_ref());
                 let dst_section = self.draw_section("DESTINATION", dst_lines);
                 content_lines.extend(dst_section);
             }
 
-            // 5. IP and LAYER 4 sections (Normal+ only)
-            if self.verbosity >= Verbosity::Normal && flow.ip.is_some() {
+            // 5. IP section (Source IP and Destination IP)
+            if flow.ip.is_some() {
                 content_lines.push(String::new());
                 let ip_ref = flow.ip.as_ref().unwrap();
                 let ip_lines = vec![
@@ -480,19 +439,21 @@ impl FlowFormatter {
                 ];
                 let ip_section = self.draw_section("IP", ip_lines);
                 content_lines.extend(ip_section);
+            }
 
-                if flow.l4.is_some() {
-                    content_lines.push(String::new());
-                    if let Some(l4) = &flow.l4 {
-                        let l4_lines = self.format_l4(l4, ip_ref);
-                        let l4_section = self.draw_section("LAYER 4", l4_lines);
-                        content_lines.extend(l4_section);
-                    }
+            // 6. LAYER 4 section (always shown at verbose)
+            if flow.ip.is_some() && flow.l4.is_some() {
+                content_lines.push(String::new());
+                let ip_ref = flow.ip.as_ref().unwrap();
+                if let Some(l4) = &flow.l4 {
+                    let l4_lines = self.format_l4(l4, ip_ref);
+                    let l4_section = self.draw_section("LAYER 4", l4_lines);
+                    content_lines.extend(l4_section);
                 }
             }
 
-            // 6. LAYER 7 section (Verbose only)
-            if self.verbosity == Verbosity::Verbose && flow.l7.is_some() {
+            // 7. LAYER 7 section (always shown at verbose)
+            if flow.l7.is_some() {
                 content_lines.push(String::new());
                 if let Some(l7) = &flow.l7 {
                     let l7_lines = self.format_l7(l7);
