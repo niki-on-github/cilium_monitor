@@ -338,10 +338,33 @@ impl FlowFormatter {
             self.color_text(&truncated_query, Color::Cyan)
         ));
 
+        if !dns.qtypes.is_empty() {
+            let qtypes = dns.qtypes.join(", ");
+            let truncated_qtypes = Self::truncate_text(&qtypes, max_content_width);
+            lines.push(format!("QTypes: {}", truncated_qtypes));
+        }
+
         if !dns.ips.is_empty() {
             lines.push("Response IPs:".to_string());
             for ip in &dns.ips {
                 lines.push(format!("  - {}", self.color_text(ip, Color::Magenta)));
+            }
+        }
+
+        if !dns.rrtypes.is_empty() {
+            let rrtypes = dns.rrtypes.join(", ");
+            let truncated_rrtypes = Self::truncate_text(&rrtypes, max_content_width);
+            lines.push(format!("RRTypes: {}", truncated_rrtypes));
+        }
+
+        if !dns.cnames.is_empty() {
+            lines.push("CNames:".to_string());
+            for cname in &dns.cnames {
+                let truncated_cname = Self::truncate_text(cname, max_content_width - 4);
+                lines.push(format!(
+                    "  - {}",
+                    self.color_text(&truncated_cname, Color::Cyan)
+                ));
             }
         }
 
@@ -352,10 +375,10 @@ impl FlowFormatter {
         if dns.rcode > 0 {
             lines.push(format!("RCODE: {}", dns.rcode));
         }
-        if !dns.qtypes.is_empty() {
-            let qtypes = dns.qtypes.join(", ");
-            let truncated_qtypes = Self::truncate_text(&qtypes, max_content_width);
-            lines.push(format!("QTypes: {}", truncated_qtypes));
+
+        if !dns.observation_source.is_empty() {
+            let truncated_source = Self::truncate_text(&dns.observation_source, max_content_width);
+            lines.push(format!("Observation Source: {}", truncated_source));
         }
 
         lines
