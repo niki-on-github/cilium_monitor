@@ -1,0 +1,24 @@
+[package]
+name = "cilium_monitor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.0", features =["rt-multi-thread", "macros"] }
+# gRPC client
+tonic = "0.11"
+# Protobuf parser
+prost = "0.12"
+prost-types = "0.12"
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive"] }
+# Terminal detection and colors
+termcolor = "1.4"
+atty = "0.2"
+# Date/time formatting
+chrono = "0.4"
+
+[build-dependencies]
+# Compiles the .proto files into Rust code at build time
+tonic-build = "0.11"
