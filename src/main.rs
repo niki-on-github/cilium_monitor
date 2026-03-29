@@ -1,5 +1,7 @@
 use clap::Parser;
 use std::io::IsTerminal;
+use std::sync::Arc;
+use tokio::sync::broadcast;
 use tonic::Request;
 
 // Include the auto-generated gRPC code
@@ -18,8 +20,10 @@ pub mod api {
 
 mod formatter;
 mod stats_formatter;
+mod web;
 use formatter::FlowFormatter;
 use stats_formatter::StatsFormatter;
+use web::FlowData;
 
 use api::observer::observer_client::ObserverClient;
 use api::observer::GetFlowsRequest;
@@ -204,6 +208,12 @@ struct CliArgs {
 enum Commands {
     Flow,
     Stats,
+    Serve {
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(long, default_value = "8080")]
+        web_port: u16,
+    },
 }
 
 #[tokio::main]
@@ -267,6 +277,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Stats => {
             let colored = std::io::stdout().is_terminal();
             handle_stats(&args, colored).await?;
+        }
+        Commands::Serve { host, web_port } => {
+            let web_host = host.clone();
+            
+            // Start the web server in a separate task
+            tokio::spawn(async move {
+                if let Err(e) = web::run_server(
+                    &web_host,
+                    web_port,
+                    args.address,
+                    args.port,
+                    args.world_only,
+                    &args.filter_ip,
+                    &args.exclude,
+                ).await
+                {
+                    eprintln!("Web server error: {}", e);
+                }
+            });
+
+            // Wait indefinitely (in a real app, you'd handle shutdown signals)
+            tokio::signal::ctrl_c().await?;
         }
     }
 

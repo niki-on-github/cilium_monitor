@@ -18,6 +18,13 @@ termcolor = "1.4"
 atty = "0.2"
 # Date/time formatting
 chrono = "0.4"
+# Web framework
+actix-web = { version = "4", features = ["ws"] }
+actix-web-actors = "4"
+actix = "0.13"
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [build-dependencies]
 # Compiles the .proto files into Rust code at build time

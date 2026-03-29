@@ -192,6 +192,16 @@ impl FlowFormatter {
         }
     }
 
+    fn format_flow_type(flow_type: i32) -> String {
+        match flow_type {
+            0 => "UNKNOWN".to_string(),
+            1 => "L3_L4".to_string(),
+            2 => "L7".to_string(),
+            3 => "SOCK".to_string(),
+            _ => format!("UNKNOWN({})", flow_type),
+        }
+    }
+
     pub fn format_verdict(&self, verdict: i32, drop_reason: i32) -> String {
         let (emoji, text, bg, fg) = match verdict {
             x if x == Verdict::Dropped as i32 => ("🚨", "DROPPED", Color::Red, Color::White),
@@ -430,7 +440,14 @@ impl FlowFormatter {
             };
             content_lines.push(format!("Direction: {}", direction));
 
-            // 3. SOURCE section
+            // 3. Flow Type (always shown)
+            let flow_type_str = Self::format_flow_type(flow.r#type);
+            content_lines.push(format!(
+                "Type: {}",
+                self.color_text(&flow_type_str, Color::Yellow)
+            ));
+
+            // 4. SOURCE section
             if let Some(source) = &flow.source {
                 content_lines.push(String::new());
                 let src_lines = self.format_endpoint(source, flow.source_service.as_ref());
@@ -438,7 +455,7 @@ impl FlowFormatter {
                 content_lines.extend(src_section);
             }
 
-            // 4. DESTINATION section
+            // 5. DESTINATION section
             if let Some(dest) = &flow.destination {
                 content_lines.push(String::new());
                 let dst_lines = self.format_endpoint(dest, flow.destination_service.as_ref());
@@ -446,7 +463,7 @@ impl FlowFormatter {
                 content_lines.extend(dst_section);
             }
 
-            // 5. IP section (Source IP and Destination IP)
+            // 6. IP section (Source IP and Destination IP)
             if flow.ip.is_some() {
                 content_lines.push(String::new());
                 let ip_ref = flow.ip.as_ref().unwrap();
@@ -464,7 +481,7 @@ impl FlowFormatter {
                 content_lines.extend(ip_section);
             }
 
-            // 6. LAYER 4 section (always shown at verbose)
+            // 7. LAYER 4 section (always shown at verbose)
             if flow.ip.is_some() && flow.l4.is_some() {
                 content_lines.push(String::new());
                 let ip_ref = flow.ip.as_ref().unwrap();
@@ -475,7 +492,7 @@ impl FlowFormatter {
                 }
             }
 
-            // 7. LAYER 7 section (always shown at verbose)
+            // 8. LAYER 7 section (always shown at verbose)
             if flow.l7.is_some() {
                 content_lines.push(String::new());
                 if let Some(l7) = &flow.l7 {
@@ -493,7 +510,7 @@ impl FlowFormatter {
                 }
             }
 
-            // 7. Add Action line at the end
+            // 9. Add Action line at the end
             content_lines.push(String::new());
             let (emoji, text, _, _) = match verdict {
                 x if x == Verdict::Dropped as i32 => ("🚨", "DROPPED", Color::Red, Color::White),
