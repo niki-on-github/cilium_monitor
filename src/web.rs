@@ -145,9 +145,12 @@ async fn start_grpc_stream(
     address: &str,
     port: u16,
     sender: broadcast::Sender<String>,
+    verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let endpoint = format!("http://{}:{}", address, port);
-    println!("Connecting to Hubble gRPC API at {}...", endpoint);
+    if verbose {
+        println!("Connecting to Hubble gRPC API at {}...", endpoint);
+    }
     
     let mut client = ObserverClient::connect(endpoint).await?;
 
@@ -160,8 +163,10 @@ async fn start_grpc_stream(
     });
 
     let mut stream = client.get_flows(request).await?.into_inner();
-    println!("Streaming flows to web UI and console...");
-    println!("Press Ctrl+C to stop\n");
+    if verbose {
+        println!("Streaming flows to web UI and console...");
+        println!("Press Ctrl+C to stop\n");
+    }
 
     let mut counter: u64 = 0;
     let formatter = FlowFormatter::new(false);
@@ -176,10 +181,12 @@ async fn start_grpc_stream(
             }
         }
         
-        let formatted = formatter.format_flow(&response);
-        if !formatted.is_empty() {
-            println!("{}", formatted);
-            println!();
+        if verbose {
+            let formatted = formatter.format_flow(&response);
+            if !formatted.is_empty() {
+                println!("{}", formatted);
+                println!();
+            }
         }
     }
 
@@ -285,12 +292,13 @@ pub async fn run_server(
     _world_only: bool,
     _filter_ip: &[String],
     _exclude: &[String],
+    verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (sender, receiver) = broadcast::channel::<String>(100);
 
     let grpc_sender = sender.clone();
     tokio::spawn(async move {
-        if let Err(e) = start_grpc_stream(&grpc_address, grpc_port, grpc_sender).await {
+        if let Err(e) = start_grpc_stream(&grpc_address, grpc_port, grpc_sender, verbose).await {
             eprintln!("gRPC stream error: {}", e);
         }
     });

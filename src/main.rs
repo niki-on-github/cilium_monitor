@@ -1,7 +1,5 @@
 use clap::Parser;
 use std::io::IsTerminal;
-use std::sync::Arc;
-use tokio::sync::broadcast;
 use tonic::Request;
 
 // Include the auto-generated gRPC code
@@ -23,7 +21,6 @@ mod stats_formatter;
 mod web;
 use formatter::FlowFormatter;
 use stats_formatter::StatsFormatter;
-use web::FlowData;
 
 use api::observer::observer_client::ObserverClient;
 use api::observer::GetFlowsRequest;
@@ -200,6 +197,9 @@ struct CliArgs {
     )]
     exclude: Vec<String>,
 
+    #[arg(long, short, help = "Enable verbose console output")]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -224,13 +224,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Dispatch to subcommand handler
     match args.command {
         Commands::Flow => {
-            // Always output colored
-            let colored = std::io::stdout().is_terminal();
+            // Only output colored if verbose is enabled
+            let colored = std::io::stdout().is_terminal() && args.verbose;
             let formatter = FlowFormatter::new(colored);
 
             // 1. Connect to the Hubble gRPC Relay (ensure 'cilium hubble port-forward' is running)
             let endpoint = format!("http://{}:{}", args.address, args.port);
-            println!("Connecting to Hubble gRPC API at {}...", endpoint);
+            if args.verbose {
+                println!("Connecting to Hubble gRPC API at {}...", endpoint);
+            }
             let mut client = ObserverClient::connect(endpoint).await?;
 
             // 2. Formulate the request. Follow = true means continuous stream.
@@ -244,7 +246,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 3. Open the gRPC stream
             let mut stream = client.get_flows(request).await?.into_inner();
-            println!("Listening for network events (Press Ctrl+C to stop)...\n");
+            if args.verbose {
+                println!("Listening for network events (Press Ctrl+C to stop)...\n");
+            }
 
             // 4. Iterate over the stream asynchronously
             while let Some(response) = stream.message().await? {
@@ -267,10 +271,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                let formatted = formatter.format_flow(&response);
-                if !formatted.is_empty() {
-                    println!("{}", formatted);
-                    println!();
+                if args.verbose {
+                    let formatted = formatter.format_flow(&response);
+                    if !formatted.is_empty() {
+                        println!("{}", formatted);
+                        println!();
+                    }
                 }
             }
         }
@@ -280,6 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Serve { host, web_port } => {
             let web_host = host.clone();
+            let verbose = args.verbose;
             
             // Start the web server in a separate task
             tokio::spawn(async move {
@@ -291,6 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args.world_only,
                     &args.filter_ip,
                     &args.exclude,
+                    verbose,
                 ).await
                 {
                     eprintln!("Web server error: {}", e);
